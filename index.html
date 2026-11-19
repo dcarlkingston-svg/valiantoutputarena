@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Output Arena</title>
-<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
 :root{--bg:#f3f5fa;--card:#fff;--ink:#141a2a;--muted:#5b6478;--line:#dde2ee;--accent:#2b4cc4;--code-bg:#111827;--code-ink:#e8ebf2;
 --c0:#d64545;--c1:#2f6fd6;--c2:#c98a0a;--c3:#2e9b5f;--good:#1f9d55;--bad:#d64545}
@@ -57,6 +58,12 @@ button.choice:active{transform:scale(.98)}
 <body>
 <div id="app"></div>
 <script>
+/* ============================================================
+   SETUP: paste your Firebase Realtime Database URL between the quotes.
+   It looks like  https://your-project-default-rtdb.firebaseio.com
+   ============================================================ */
+const DATABASE_URL = "https://valiant-output-arena-default-rtdb.firebaseio.com/";
+
 /* ============================================================
    OUTPUT ARENA — "What does this Python code print?"
    Teacher (host) opens:  this-page-url#host   on the projector
@@ -147,7 +154,6 @@ for n in nums:
 ];
 
 /* ---------------- shared helpers ---------------- */
-const PREFIX = 'vva-output-arena-';
 const IS_HOST = /host/i.test(location.hash) || new URLSearchParams(location.search).has('host');
 const app = document.getElementById('app');
 const SHAPES = ['▲','◆','●','■'];
@@ -170,13 +176,27 @@ function choiceTiles(choices, o = {}) {
 function header(sub) {
   return `<div><div class="eyebrow">${esc(sub)}</div><h1>Output Arena</h1></div>`;
 }
-if (typeof Peer === 'undefined') {
-  app.innerHTML = `<div class="wrap"><div class="card"><h2>Can't load the game library</h2><p class="muted">The network blocked the PeerJS script from cdn.jsdelivr.net. Ask IT to allow cdn.jsdelivr.net and 0.peerjs.com.</p></div></div>`;
-  throw new Error('PeerJS not loaded');
+if (typeof firebase === 'undefined') {
+  app.innerHTML = `<div class="wrap"><div class="card"><h2>Can't load the game library</h2><p class="muted">The network blocked www.gstatic.com. Ask IT to allow www.gstatic.com and *.firebaseio.com.</p></div></div>`;
+  throw new Error('Firebase not loaded');
+}
+let DB = null;
+function db() {
+  if (!DB) { firebase.initializeApp({ databaseURL: DATABASE_URL.trim().replace(/\/+$/, '') }); DB = firebase.database(); }
+  return DB;
+}
+const TS = () => firebase.database.ServerValue.TIMESTAMP;
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+function showSetup() {
+  app.innerHTML = `<div class="wrap"><div class="card"><h2>One-time setup needed</h2>
+    <p class="muted">Open the HTML file, find <code>const DATABASE_URL = "";</code> near the top of the script, and paste your Firebase Realtime Database URL between the quotes. Then re-upload the file.</p></div></div>`;
+}
+function fatal(title, msg) {
+  app.innerHTML = `<div class="wrap"><div class="card"><h2>${esc(title)}</h2><p class="muted">${esc(msg)}</p><button class="btn primary" onclick="location.reload()">Try again</button></div></div>`;
 }
 
 /* ================= HOST (teacher) ================= */
-const H = { peer:null, code:'', players:new Map(), conns:new Map(), order:[], qi:-1,
+const H = { room:null, code:'', players:new Map(), conns:new Map(), order:[], qi:-1,
             phase:'lobby', qStart:0, limit:20, count:10, shuffle:true, timer:null };
 
 function randCode() { const A='ABCDEFGHJKMNPQRSTUVWXYZ'; let s=''; for (let i=0;i<4;i++) s+=A[Math.floor(Math.random()*A.length)]; return s; }
@@ -185,23 +205,53 @@ const connected = () => [...H.players.values()].filter(p => p.conn && p.conn.ope
 function ranked() { return [...H.players.values()].sort((a,b) => b.score - a.score); }
 function rankOf(p) { return 1 + [...H.players.values()].filter(o => o.score > p.score).length; }
 
-function startHost() {
-  H.code = randCode();
+/* Each student is a "connection": messages in arrive at rooms/CODE/in,
+   messages out go to rooms/CODE/out/STUDENT_ID, and rooms/CODE/presence shows who is online. */
+H.fconns = new Map(); H.seq = 0;
+function hostConn(pid) {
+  let c = H.fconns.get(pid);
+  if (!c) {
+    c = { peer: pid, open: true,
+      send(m) { H.room.child('out/' + pid).set({ s: ++H.seq, m }).catch(() => {}); },
+      close() { this.open = false; } };
+    H.fconns.set(pid, c);
+  }
+  return c;
+}
+
+async function startHost() {
+  if (!DATABASE_URL.trim()) return showSetup();
   app.innerHTML = `<div class="wrap"><div class="card center"><h2>Opening a game room…</h2></div></div>`;
-  H.peer = new Peer(PREFIX + H.code, { debug: 1 });
-  H.peer.on('open', () => renderHost());
-  H.peer.on('error', e => {
-    if (e.type === 'unavailable-id') { H.peer.destroy(); startHost(); return; }
-    if (e.type === 'peer-unavailable') return;
-    if (['network','server-error','socket-error','socket-closed'].includes(e.type) && H.phase !== 'lobby') return;
-    app.innerHTML = `<div class="wrap"><div class="card"><h2>Couldn't open the game room</h2><p class="muted">Error: ${esc(e.type)}. The school network may be blocking 0.peerjs.com or WebRTC. Try again, or ask IT to allow them.</p><button class="btn primary" onclick="location.reload()">Try again</button></div></div>`;
-  });
-  H.peer.on('disconnected', () => { try { H.peer.reconnect(); } catch(e){} });
-  H.peer.on('connection', conn => {
-    conn.on('data', d => hostData(conn, d));
-    conn.on('close', () => hostClose(conn));
-    conn.on('error', () => hostClose(conn));
-  });
+  try {
+    let code, room;
+    for (let tries = 0; tries < 10; tries++) {
+      code = randCode(); room = db().ref('rooms/' + code);
+      const s = await withTimeout(room.child('host').get(), 10000);
+      if (!s.exists()) break;
+    }
+    await room.remove();
+    H.code = code; H.room = room;
+    db().ref('.info/connected').on('value', s => {
+      if (!s.val()) return;
+      room.child('host').onDisconnect().remove();
+      room.child('host').set({ t: TS() });
+    });
+    room.child('in').on('child_added', s => {
+      const v = s.val() || {}; s.ref.remove().catch(() => {});
+      if (!v.pid || !v.d) return;
+      const c = hostConn(String(v.pid)); c.open = true;
+      hostData(c, v.d);
+    });
+    room.child('presence').on('child_removed', s => {
+      const c = H.fconns.get(s.key);
+      if (c) { c.open = false; hostClose(c); H.fconns.delete(s.key); }
+    });
+    renderHost();
+  } catch (e) {
+    fatal("Couldn't open the game room",
+      /permission/i.test(e.message) ? 'Firebase said "permission denied". Check the database Rules (see setup steps).'
+      : 'Could not reach the Firebase database. Check the DATABASE_URL, or ask IT to allow *.firebaseio.com.');
+  }
 }
 
 function hostData(conn, d) {
@@ -376,15 +426,20 @@ function finish() {
 }
 
 /* ================= STUDENT ================= */
-const S = { peer:null, conn:null, tick:null, leaving:false, cid: load('oa-cid') || Math.random().toString(36).slice(2) };
+const S = { room:null, conn:null, tick:null, offs:[], cid: load('oa-cid') || ('s' + Math.random().toString(36).slice(2, 12)) };
 store('oa-cid', S.cid);
 
 function cleanup() {
-  S.leaving = true; clearInterval(S.tick);
-  try { S.conn && S.conn.close(); } catch(e){}
-  try { S.peer && S.peer.destroy(); } catch(e){}
-  S.conn = null; S.peer = null;
+  clearInterval(S.tick);
+  S.offs.forEach(f => { try { f(); } catch(e){} }); S.offs = [];
+  if (S.room) {
+    const pres = S.room.child('presence/' + S.cid);
+    try { pres.onDisconnect().cancel(); pres.remove(); } catch(e){}
+  }
+  if (S.conn) S.conn.open = false;
+  S.conn = null; S.room = null;
 }
+function listen(ref, ev, fn) { ref.on(ev, fn); S.offs.push(() => ref.off(ev, fn)); }
 
 function renderJoin(msg) {
   app.innerHTML = `<div class="wrap"><div class="card center">
@@ -404,38 +459,44 @@ function renderWait(title, sub) {
   app.innerHTML = `<div class="wrap"><div class="card center"><div class="big">${esc(title)}</div><p class="muted" style="font-size:18px">${esc(sub)}</p></div></div>`;
 }
 
-function join(code, name) {
+async function join(code, name) {
   code = String(code).trim().toUpperCase(); name = String(name).trim();
   if (code.length !== 4) return renderJoin('Room codes are 4 letters.');
   if (!name) return renderJoin('Type your name.');
+  if (!DATABASE_URL.trim()) return renderJoin('This game is not set up yet. Tell your teacher.');
   store('oa-code', code); store('oa-name', name);
-  cleanup(); S.leaving = false;
-  renderWait('Connecting…', 'Finding room ' + code);
-  const timeout = setTimeout(() => { if (!S.conn || !S.conn.open) { cleanup(); renderJoin("Couldn't connect. Check the code and try again."); } }, 12000);
-  S.peer = new Peer({ debug: 1 });
-  S.peer.on('open', () => {
-    S.conn = S.peer.connect(PREFIX + code, { reliable: true });
-    S.conn.on('open', () => { clearTimeout(timeout); S.conn.send({type:'join', name, cid:S.cid}); });
-    S.conn.on('data', studentData);
-    S.conn.on('close', lost);
-  });
-  S.peer.on('error', e => {
-    clearTimeout(timeout); cleanup();
-    renderJoin(e.type === 'peer-unavailable' ? `No game found with code ${code}. Check the board.` : `Connection problem (${e.type}). Try again.`);
-  });
-}
-
-function lost() {
-  if (S.leaving) return;
   cleanup();
-  app.innerHTML = `<div class="wrap"><div class="card center"><div class="big">Connection lost</div>
-    <p class="muted">Your score is saved. Rejoin with the same name.</p>
-    <button class="btn primary" id="rj" style="font-size:20px">Rejoin</button></div></div>`;
-  $('rj').onclick = () => join(load('oa-code'), load('oa-name'));
+  renderWait('Connecting…', 'Finding room ' + code);
+  const room = db().ref('rooms/' + code), pid = S.cid;
+  try {
+    const h = await withTimeout(room.child('host').get(), 10000);
+    if (!h.exists()) return renderJoin(`No game found with code ${code}. Check the board.`);
+    await room.child('out/' + pid).remove();
+  } catch (e) {
+    return renderJoin(/permission/i.test(e.message) ? 'The game database is locked. Tell your teacher.' : "Couldn't reach the game. Check your internet and try again.");
+  }
+  S.room = room;
+  const conn = S.conn = { open: true, send(m) { if (this.open) room.child('in').push({ pid, d: m }).catch(() => {}); } };
+  let hostGone = false;
+  listen(room.child('out/' + pid), 'value', s => { const v = s.val(); if (v && v.m && conn.open) studentData(v.m); });
+  listen(db().ref('.info/connected'), 'value', s => {
+    if (!s.val() || !conn.open) return;
+    const pres = room.child('presence/' + pid);
+    pres.onDisconnect().remove(); pres.set(true);
+    conn.send({ type: 'join', name, cid: pid });
+  });
+  listen(room.child('host'), 'value', s => {
+    if (!conn.open) return;
+    if (!s.exists()) { hostGone = true; renderWait('Teacher screen disconnected', "Hang on. You'll be back in as soon as it reconnects."); }
+    else if (hostGone) { hostGone = false; conn.send({ type: 'join', name, cid: pid }); }
+  });
 }
 
+const asList = v => Array.isArray(v) ? v : Object.keys(v || {}).sort((a,b) => a - b).map(k => v[k]);
 function studentData(d) {
   if (!d || typeof d !== 'object') return;
+  if (d.choices) d.choices = asList(d.choices);
+  if (d.top) d.top = asList(d.top);
   switch (d.type) {
     case 'welcome': renderWait(`You're in, ${d.name}!`, 'Watch the board. The game starts soon.'); break;
     case 'error': cleanup(); renderJoin(d.msg); break;
