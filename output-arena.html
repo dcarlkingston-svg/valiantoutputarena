@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Output Arena</title>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+:root{--bg:#f3f5fa;--card:#fff;--ink:#141a2a;--muted:#5b6478;--line:#dde2ee;--accent:#2b4cc4;--code-bg:#111827;--code-ink:#e8ebf2;
+--c0:#d64545;--c1:#2f6fd6;--c2:#c98a0a;--c3:#2e9b5f;--good:#1f9d55;--bad:#d64545}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1220;--card:#171c2e;--ink:#eef1f8;--muted:#9aa3b8;--line:#2a3148;--accent:#7d97ff;--code-bg:#0a0d17}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
+.center{text-align:center}
+h1{margin:2px 0 0;font-size:clamp(26px,4vw,40px)} h2{margin:0;font-size:20px}
+.eyebrow{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)} .small{font-size:13px}
+.row{display:flex;align-items:center;gap:12px} .between{justify-content:space-between} .wrapgap{flex-wrap:wrap}
+.roomcode{font-size:clamp(56px,12vw,120px);font-weight:900;letter-spacing:.15em;color:var(--accent);line-height:1.1}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.chip{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:999px;padding:8px 14px;font-size:16px;font-weight:600;cursor:pointer}
+.chip:hover{border-color:var(--bad);text-decoration:line-through}
+.chip.off{opacity:.45}
+button{font:inherit;cursor:pointer}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:10px 16px;font-weight:700}
+.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+input[type=text],select{font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+label{display:flex;align-items:center;gap:8px;font-weight:600}
+.code{background:var(--code-bg);color:var(--code-ink);font-family:ui-monospace,Menlo,Consolas,monospace;padding:16px 18px;border-radius:12px;white-space:pre;overflow-x:auto;font-size:clamp(15px,2.6vw,22px);line-height:1.5;margin:0}
+.host .code{font-size:clamp(18px,3vw,32px)}
+.choices{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:520px){.choices{grid-template-columns:1fr}}
+.choice{color:#fff;border:0;border-radius:12px;padding:14px 16px;font-size:18px;font-weight:700;text-align:left;display:flex;gap:12px;align-items:center;min-height:64px;transition:opacity .2s,transform .1s}
+button.choice:active{transform:scale(.98)}
+.c0{background:var(--c0)}.c1{background:var(--c1)}.c2{background:var(--c2)}.c3{background:var(--c3)}
+.shape{font-size:22px;opacity:.9}
+.ctext{white-space:pre-wrap;font-family:ui-monospace,Menlo,Consolas,monospace;flex:1}
+.count{font-size:22px;font-weight:900;background:rgba(0,0,0,.2);border-radius:8px;padding:2px 10px}
+.dim{opacity:.3}.right{outline:4px solid var(--ink);outline-offset:2px}.mine:not(.right){outline:3px dashed var(--ink);outline-offset:2px}
+.timer{font-size:40px;font-weight:900;min-width:70px;text-align:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:2px 12px}
+.why{border-left:5px solid var(--accent);background:var(--card);padding:12px 16px;border-radius:8px;font-size:17px}
+.board{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.board li{display:flex;justify-content:space-between;padding:10px 14px;border-radius:10px;background:var(--bg);font-weight:700;font-size:18px}
+.gain{color:var(--good);font-size:14px;margin-left:8px}
+.big{font-size:clamp(28px,6vw,48px);font-weight:900;margin:6px 0}
+.good{color:var(--good)}.bad{color:var(--bad)}
+.podium{display:flex;justify-content:center;align-items:flex-end;gap:12px;margin-top:10px}
+.pod{background:var(--accent);color:#fff;border-radius:12px 12px 0 0;width:min(28%,200px);text-align:center;padding:10px 6px;font-weight:800}
+.pod .nm{font-size:clamp(16px,2.4vw,24px);word-break:break-word}.pod .pl{font-size:36px}
+.form{display:flex;flex-direction:column;gap:12px;max-width:380px;margin:0 auto;text-align:left}
+.form input{font-size:20px}
+.err{color:var(--bad);font-weight:700}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+/* ============================================================
+   OUTPUT ARENA — "What does this Python code print?"
+   Teacher (host) opens:  this-page-url#host   on the projector
+   Students open the same page (embedded in Canvas) and join with the room code.
+   Edit or add questions below. answer = index of the correct choice (0-3).
+   ============================================================ */
+const QUESTIONS = [
+ {code:`print("Hi" * 3)`, choices:["Hi3","HiHiHi","Hi Hi Hi","Error"], answer:1,
+  why:"Multiplying a string by an integer repeats it. No spaces are added."},
+ {code:`x = 5
+x = x + 2
+print(x)`, choices:["5","x + 2","7","52"], answer:2,
+  why:"Line 2 takes the old value of x (5), adds 2, and stores the result back in x."},
+ {code:`print(7 // 2)`, choices:["3","3.5","4","1"], answer:0,
+  why:"// is floor division. It divides and drops everything after the decimal point."},
+ {code:`print(7 % 3)`, choices:["2","1","0","2.33"], answer:1,
+  why:"% gives the remainder. 7 = 3 × 2 + 1, so the remainder is 1."},
+ {code:`age = "14"
+print(age + "1")`, choices:["15","141","14 1","Error"], answer:1,
+  why:"Both values are strings (they have quotes), so + glues the text together."},
+ {code:`print(len("Valiant"))`, choices:["6","8","Valiant","7"], answer:3,
+  why:"len() counts characters: V-a-l-i-a-n-t is 7."},
+ {code:`names = ["Ava", "Ben", "Cal"]
+print(names[1])`, choices:["Ava","Ben","Cal","1"], answer:1,
+  why:"List indexes start at 0, so names[1] is the second item."},
+ {code:`for i in range(3):
+    print(i)`, choices:["1\n2\n3","0\n1\n2\n3","0\n1\n2","3"], answer:2,
+  why:"range(3) starts at 0 and stops before 3."},
+ {code:`print(10 / 4)`, choices:["2.5","2","2.0","3"], answer:0,
+  why:"A single / always gives a float (a decimal number)."},
+ {code:`score = 85
+if score >= 90:
+    print("A")
+elif score >= 80:
+    print("B")
+else:
+    print("C")`, choices:["A","B","C","B\nC"], answer:1,
+  why:"Python checks from the top and runs only the first branch that is True."},
+ {code:`print("5" + 5)`, choices:["10","55","TypeError","5 5"], answer:2,
+  why:"You can't add a str and an int. Fix it with int(\"5\") + 5 or \"5\" + str(5)."},
+ {code:`word = "pygame"
+print(word[-1])`, choices:["p","y","e","Error"], answer:2,
+  why:"Negative indexes count from the end, and -1 is the last character."},
+ {code:`total = 0
+for n in range(1, 4):
+    total = total + n
+print(total)`, choices:["6","10","3","0"], answer:0,
+  why:"range(1, 4) gives 1, 2, 3, and 1 + 2 + 3 = 6."},
+ {code:`def double(n):
+    return n * 2
+
+print(double(4) + 1)`, choices:["8","9","10","41"], answer:1,
+  why:"double(4) returns 8, then the code adds 1."},
+ {code:`nums = [3, 1, 2]
+nums.append(5)
+print(len(nums))`, choices:["3","5","4","Error"], answer:2,
+  why:".append() adds one item to the end, so the list now has 4 items."},
+ {code:`print(3 == 3.0)`, choices:["False","True","Error","3"], answer:1,
+  why:"== compares values. 3 and 3.0 are the same number."},
+ {code:`name = "sam"
+print(name.upper())`, choices:["sam","Sam","SAM","name"], answer:2,
+  why:".upper() returns the string in all capital letters."},
+ {code:`x = 10
+while x > 7:
+    x = x - 1
+print(x)`, choices:["8","9","6","7"], answer:3,
+  why:"The loop keeps going while x > 7, so it stops when x reaches 7."},
+ {code:`print(f"{2 + 3} apples")`, choices:["{2 + 3} apples","5 apples","23 apples","f5 apples"], answer:1,
+  why:"In an f-string, Python runs the code inside { } and puts in the result."},
+ {code:`print(bool(0))`, choices:["True","0","False","None"], answer:2,
+  why:"0 counts as False. Any other number counts as True."},
+ {code:`a, b = 2, 5
+a, b = b, a
+print(a)`, choices:["5","2","7","(5, 2)"], answer:0,
+  why:"Line 2 swaps the two values in one step."},
+ {code:`print("abc"[1:])`, choices:["bc","a","ab","abc"], answer:0,
+  why:"[1:] slices from index 1 to the end."},
+ {code:`if 5 > 3 and 2 > 4:
+    print("yes")
+else:
+    print("no")`, choices:["yes","no","yes\nno","Error"], answer:1,
+  why:"and needs BOTH sides to be True, and 2 > 4 is False."},
+ {code:`nums = [4, 8, 15]
+for n in nums:
+    if n > 5:
+        print(n)`, choices:["4","8\n15","15","4\n8\n15"], answer:1,
+  why:"The loop visits every item but only prints the ones bigger than 5."},
+];
+
+/* ---------------- shared helpers ---------------- */
+const PREFIX = 'vva-output-arena-';
+const IS_HOST = /host/i.test(location.hash) || new URLSearchParams(location.search).has('host');
+const app = document.getElementById('app');
+const SHAPES = ['▲','◆','●','■'];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const send = (conn,msg) => { try { if (conn && conn.open) conn.send(msg); } catch(e){} };
+const store = (k,v) => { try { localStorage.setItem(k,v); } catch(e){} };
+const load = k => { try { return localStorage.getItem(k) || ''; } catch(e){ return ''; } };
+const $ = id => document.getElementById(id);
+
+function choiceTiles(choices, o = {}) {
+  return '<div class="choices">' + choices.map((c,i) => {
+    let cls = 'choice c'+i;
+    if (o.correct != null) cls += (i === o.correct ? ' right' : ' dim');
+    if (o.chose === i) cls += ' mine';
+    const tag = o.clickable ? 'button' : 'div';
+    const cnt = o.counts ? `<span class="count">${o.counts[i]}</span>` : '';
+    return `<${tag} class="${cls}" ${o.clickable ? `data-choice="${i}"` : ''}><span class="shape">${SHAPES[i]}</span><span class="ctext">${esc(c)}</span>${cnt}</${tag}>`;
+  }).join('') + '</div>';
+}
+function header(sub) {
+  return `<div><div class="eyebrow">${esc(sub)}</div><h1>Output Arena</h1></div>`;
+}
+if (typeof Peer === 'undefined') {
+  app.innerHTML = `<div class="wrap"><div class="card"><h2>Can't load the game library</h2><p class="muted">The network blocked the PeerJS script from cdn.jsdelivr.net. Ask IT to allow cdn.jsdelivr.net and 0.peerjs.com.</p></div></div>`;
+  throw new Error('PeerJS not loaded');
+}
+
+/* ================= HOST (teacher) ================= */
+const H = { peer:null, code:'', players:new Map(), conns:new Map(), order:[], qi:-1,
+            phase:'lobby', qStart:0, limit:20, count:10, shuffle:true, timer:null };
+
+function randCode() { const A='ABCDEFGHJKMNPQRSTUVWXYZ'; let s=''; for (let i=0;i<4;i++) s+=A[Math.floor(Math.random()*A.length)]; return s; }
+const curQ = () => QUESTIONS[H.order[H.qi]];
+const connected = () => [...H.players.values()].filter(p => p.conn && p.conn.open);
+function ranked() { return [...H.players.values()].sort((a,b) => b.score - a.score); }
+function rankOf(p) { return 1 + [...H.players.values()].filter(o => o.score > p.score).length; }
+
+function startHost() {
+  H.code = randCode();
+  app.innerHTML = `<div class="wrap"><div class="card center"><h2>Opening a game room…</h2></div></div>`;
+  H.peer = new Peer(PREFIX + H.code, { debug: 1 });
+  H.peer.on('open', () => renderHost());
+  H.peer.on('error', e => {
+    if (e.type === 'unavailable-id') { H.peer.destroy(); startHost(); return; }
+    if (e.type === 'peer-unavailable') return;
+    if (['network','server-error','socket-error','socket-closed'].includes(e.type) && H.phase !== 'lobby') return;
+    app.innerHTML = `<div class="wrap"><div class="card"><h2>Couldn't open the game room</h2><p class="muted">Error: ${esc(e.type)}. The school network may be blocking 0.peerjs.com or WebRTC. Try again, or ask IT to allow them.</p><button class="btn primary" onclick="location.reload()">Try again</button></div></div>`;
+  });
+  H.peer.on('disconnected', () => { try { H.peer.reconnect(); } catch(e){} });
+  H.peer.on('connection', conn => {
+    conn.on('data', d => hostData(conn, d));
+    conn.on('close', () => hostClose(conn));
+    conn.on('error', () => hostClose(conn));
+  });
+}
+
+function hostData(conn, d) {
+  if (!d || typeof d !== 'object') return;
+  if (d.type === 'join') {
+    const name = String(d.name || '').trim().replace(/\s+/g,' ').slice(0,16);
+    if (!name) return send(conn, {type:'error', msg:'Enter a name.'});
+    const key = name.toLowerCase();
+    let p = H.players.get(key);
+    if (p && p.conn && p.conn.open && p.conn !== conn && p.cid !== d.cid)
+      return send(conn, {type:'error', msg:'Someone already has that name. Try another one.'});
+    if (!p) { p = { name, cid:d.cid, score:0, streak:0, answers:{}, conn:null, gained:0 }; H.players.set(key, p); }
+    if (p.conn && p.conn !== conn) { try { p.conn.close(); } catch(e){} }
+    p.conn = conn; p.cid = d.cid; H.conns.set(conn.peer, key);
+    send(conn, {type:'welcome', name:p.name, score:p.score});
+    if (H.phase === 'question') sendQuestion(p);
+    else if (H.phase === 'final') sendFinal(p);
+    refreshHost();
+  }
+  else if (d.type === 'answer') {
+    const p = H.players.get(H.conns.get(conn.peer));
+    if (!p || H.phase !== 'question' || d.qi !== H.qi || p.answers[H.qi]) return;
+    const choice = Number(d.choice);
+    if (!(choice >= 0 && choice <= 3)) return;
+    p.answers[H.qi] = { choice, ms: Date.now() - H.qStart };
+    send(conn, {type:'locked'});
+    refreshHost();
+    const live = connected();
+    if (live.length && live.every(x => x.answers[H.qi])) reveal();
+  }
+}
+
+function hostClose(conn) {
+  const key = H.conns.get(conn.peer);
+  H.conns.delete(conn.peer);
+  const p = key && H.players.get(key);
+  if (p && p.conn === conn) p.conn = null;
+  refreshHost();
+}
+
+function refreshHost() {
+  if (H.phase === 'lobby') renderHost();
+  else if (H.phase === 'question' && $('answered')) $('answered').textContent = answeredText();
+}
+function answeredText() {
+  const live = connected();
+  return `${live.filter(p => p.answers[H.qi]).length} of ${live.length} answered`;
+}
+
+function renderHost() {
+  const ps = [...H.players.entries()];
+  const counts = [5,10,15,QUESTIONS.length].filter((v,i,a) => v <= QUESTIONS.length && a.indexOf(v) === i);
+  app.innerHTML = `<div class="wrap host">
+    <div class="row between">${header('Intro to Python 1 · Vanguard Valiants')}</div>
+    <div class="card center">
+      <p class="muted" style="margin:0">Open <b>Output Arena</b> in Canvas and enter this code:</p>
+      <div class="roomcode">${H.code}</div>
+    </div>
+    <div class="card">
+      <div class="row between"><h2>Players (${ps.length})</h2><span class="muted small">Click a name to remove it</span></div>
+      <div class="chips" id="chips">${ps.length ? ps.map(([k,p]) => `<button class="chip ${p.conn && p.conn.open ? '' : 'off'}" data-key="${esc(k)}">${esc(p.name)}</button>`).join('') : '<span class="muted">Waiting for players…</span>'}</div>
+    </div>
+    <div class="card row wrapgap between">
+      <div class="row wrapgap">
+        <label>Seconds <select id="limit">${[10,20,30,45].map(s => `<option ${s===H.limit?'selected':''}>${s}</option>`).join('')}</select></label>
+        <label>Questions <select id="count">${counts.map(s => `<option ${s===H.count?'selected':''}>${s}</option>`).join('')}</select></label>
+        <label><input type="checkbox" id="shuffle" ${H.shuffle?'checked':''}> Shuffle</label>
+      </div>
+      <button class="btn primary" id="start">Start game ▶</button>
+    </div></div>`;
+  $('limit').onchange = e => H.limit = +e.target.value;
+  $('count').onchange = e => H.count = +e.target.value;
+  $('shuffle').onchange = e => H.shuffle = e.target.checked;
+  $('start').onclick = startGame;
+  $('chips').onclick = e => {
+    const key = e.target.dataset && e.target.dataset.key; if (!key) return;
+    const p = H.players.get(key); if (!p) return;
+    if (!confirm(`Remove ${p.name} from the game?`)) return;
+    if (p.conn) { send(p.conn, {type:'kicked'}); const c = p.conn; setTimeout(() => { try { c.close(); } catch(e){} }, 300); }
+    H.players.delete(key); renderHost();
+  };
+}
+
+function startGame() {
+  let idx = QUESTIONS.map((_,i) => i);
+  if (H.shuffle) for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+  H.order = idx.slice(0, H.count);
+  for (const p of H.players.values()) { p.score = 0; p.streak = 0; p.answers = {}; p.gained = 0; }
+  H.qi = 0; askQuestion();
+}
+
+function sendQuestion(p) {
+  const q = curQ();
+  send(p.conn, {type:'question', qi:H.qi, num:H.qi+1, total:H.order.length, code:q.code, choices:q.choices,
+    remaining: Math.max(0, H.limit*1000 - (Date.now() - H.qStart)), already: !!p.answers[H.qi]});
+}
+
+function askQuestion() {
+  const q = curQ();
+  H.phase = 'question'; H.qStart = Date.now();
+  for (const p of H.players.values()) sendQuestion(p);
+  app.innerHTML = `<div class="wrap host">
+    <div class="row between"><div class="eyebrow">Question ${H.qi+1} of ${H.order.length} · Room ${H.code}</div><div class="timer" id="timer">${H.limit}</div></div>
+    <h2>What does this code print?</h2>
+    <pre class="code">${esc(q.code)}</pre>
+    ${choiceTiles(q.choices)}
+    <div class="row between"><span class="muted" id="answered">${answeredText()}</span><button class="btn" id="revealNow">Reveal now</button></div></div>`;
+  $('revealNow').onclick = reveal;
+  clearInterval(H.timer);
+  H.timer = setInterval(() => {
+    const left = H.limit*1000 - (Date.now() - H.qStart);
+    if ($('timer')) $('timer').textContent = Math.max(0, Math.ceil(left/1000));
+    if (left <= 0) reveal();
+  }, 200);
+}
+
+function reveal() {
+  if (H.phase !== 'question') return;
+  clearInterval(H.timer); H.phase = 'reveal';
+  const q = curQ(), counts = [0,0,0,0];
+  for (const p of H.players.values()) {
+    const a = p.answers[H.qi]; p.gained = 0;
+    if (a) {
+      counts[a.choice]++;
+      if (a.choice === q.answer) {
+        p.streak++;
+        p.gained = Math.round(500 + 500 * Math.max(0, 1 - a.ms/(H.limit*1000))) + Math.min(p.streak - 1, 3) * 100;
+      } else p.streak = 0;
+    } else p.streak = 0;
+    p.score += p.gained;
+  }
+  const total = H.players.size;
+  for (const p of H.players.values()) {
+    const a = p.answers[H.qi];
+    send(p.conn, {type:'reveal', answer:q.answer, choices:q.choices, chose: a ? a.choice : null,
+      gained:p.gained, score:p.score, streak:p.streak, rank:rankOf(p), of:total, why:q.why});
+  }
+  const last = H.qi >= H.order.length - 1;
+  const top = ranked().slice(0,5);
+  app.innerHTML = `<div class="wrap host">
+    <div class="eyebrow">Question ${H.qi+1} of ${H.order.length} · Answer</div>
+    <pre class="code">${esc(q.code)}</pre>
+    ${choiceTiles(q.choices, {correct:q.answer, counts})}
+    <div class="why">💡 ${esc(q.why)}</div>
+    <div class="card"><h2>Leaderboard</h2><ol class="board" style="margin-top:10px">
+      ${top.map((p,i) => `<li><span>${i+1}. ${esc(p.name)}${p.gained ? `<span class="gain">+${p.gained}</span>` : ''}</span><span>${p.score}</span></li>`).join('') || '<li>No players</li>'}
+    </ol></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn primary" id="next">${last ? 'Final results 🏆' : 'Next question ▶'}</button></div></div>`;
+  $('next').onclick = () => { if (last) finish(); else { H.qi++; askQuestion(); } };
+}
+
+function sendFinal(p) {
+  send(p.conn, {type:'final', rank:rankOf(p), of:H.players.size, score:p.score,
+    top: ranked().slice(0,3).map(x => ({name:x.name, score:x.score}))});
+}
+
+function finish() {
+  H.phase = 'final';
+  for (const p of H.players.values()) sendFinal(p);
+  const r = ranked(), [a,b,c] = r;
+  const pod = (p,place,h) => p ? `<div class="pod" style="height:${h}px"><div class="pl">${place}</div><div class="nm">${esc(p.name)}</div><div>${p.score}</div></div>` : '';
+  app.innerHTML = `<div class="wrap host">
+    <div class="row between">${header('Final results')}</div>
+    <div class="podium">${pod(b,'🥈',170)}${pod(a,'🥇',220)}${pod(c,'🥉',140)}</div>
+    <div class="card"><ol class="board">${r.map((p,i) => `<li><span>${i+1}. ${esc(p.name)}</span><span>${p.score}</span></li>`).join('')}</ol></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn primary" id="again">Play again ↺</button></div></div>`;
+  $('again').onclick = () => {
+    H.phase = 'lobby'; H.qi = -1;
+    for (const p of H.players.values()) send(p.conn, {type:'lobby'});
+    renderHost();
+  };
+}
+
+/* ================= STUDENT ================= */
+const S = { peer:null, conn:null, tick:null, leaving:false, cid: load('oa-cid') || Math.random().toString(36).slice(2) };
+store('oa-cid', S.cid);
+
+function cleanup() {
+  S.leaving = true; clearInterval(S.tick);
+  try { S.conn && S.conn.close(); } catch(e){}
+  try { S.peer && S.peer.destroy(); } catch(e){}
+  S.conn = null; S.peer = null;
+}
+
+function renderJoin(msg) {
+  app.innerHTML = `<div class="wrap"><div class="card center">
+    ${header('Intro to Python 1 · Vanguard Valiants')}
+    <p class="muted">Read the Python code and pick what it prints. Fast + correct = more points.</p>
+    <form class="form" id="f">
+      <label style="flex-direction:column;align-items:stretch">Room code<input type="text" id="code" maxlength="4" autocomplete="off" value="${esc(load('oa-code'))}" style="text-transform:uppercase;letter-spacing:.2em;font-weight:800"></label>
+      <label style="flex-direction:column;align-items:stretch">Your name<input type="text" id="name" maxlength="16" autocomplete="off" value="${esc(load('oa-name'))}"></label>
+      ${msg ? `<div class="err">${esc(msg)}</div>` : ''}
+      <button class="btn primary" style="font-size:20px">Join game</button>
+    </form></div></div>`;
+  $('f').onsubmit = e => { e.preventDefault(); join($('code').value, $('name').value); };
+}
+
+function renderWait(title, sub) {
+  clearInterval(S.tick);
+  app.innerHTML = `<div class="wrap"><div class="card center"><div class="big">${esc(title)}</div><p class="muted" style="font-size:18px">${esc(sub)}</p></div></div>`;
+}
+
+function join(code, name) {
+  code = String(code).trim().toUpperCase(); name = String(name).trim();
+  if (code.length !== 4) return renderJoin('Room codes are 4 letters.');
+  if (!name) return renderJoin('Type your name.');
+  store('oa-code', code); store('oa-name', name);
+  cleanup(); S.leaving = false;
+  renderWait('Connecting…', 'Finding room ' + code);
+  const timeout = setTimeout(() => { if (!S.conn || !S.conn.open) { cleanup(); renderJoin("Couldn't connect. Check the code and try again."); } }, 12000);
+  S.peer = new Peer({ debug: 1 });
+  S.peer.on('open', () => {
+    S.conn = S.peer.connect(PREFIX + code, { reliable: true });
+    S.conn.on('open', () => { clearTimeout(timeout); S.conn.send({type:'join', name, cid:S.cid}); });
+    S.conn.on('data', studentData);
+    S.conn.on('close', lost);
+  });
+  S.peer.on('error', e => {
+    clearTimeout(timeout); cleanup();
+    renderJoin(e.type === 'peer-unavailable' ? `No game found with code ${code}. Check the board.` : `Connection problem (${e.type}). Try again.`);
+  });
+}
+
+function lost() {
+  if (S.leaving) return;
+  cleanup();
+  app.innerHTML = `<div class="wrap"><div class="card center"><div class="big">Connection lost</div>
+    <p class="muted">Your score is saved. Rejoin with the same name.</p>
+    <button class="btn primary" id="rj" style="font-size:20px">Rejoin</button></div></div>`;
+  $('rj').onclick = () => join(load('oa-code'), load('oa-name'));
+}
+
+function studentData(d) {
+  if (!d || typeof d !== 'object') return;
+  switch (d.type) {
+    case 'welcome': renderWait(`You're in, ${d.name}!`, 'Watch the board. The game starts soon.'); break;
+    case 'error': cleanup(); renderJoin(d.msg); break;
+    case 'kicked': cleanup(); renderJoin('Your teacher removed that name. Join again with your real name.'); break;
+    case 'lobby': renderWait('New game!', 'Get ready. Your teacher is starting another round.'); break;
+    case 'locked': renderWait('Answer locked in 🔒', 'Waiting for everyone else…'); break;
+    case 'question': d.already ? renderWait('Answer locked in 🔒', 'Waiting for everyone else…') : renderQuestion(d); break;
+    case 'reveal': renderReveal(d); break;
+    case 'final': renderFinal(d); break;
+  }
+}
+
+function renderQuestion(d) {
+  const deadline = Date.now() + d.remaining;
+  app.innerHTML = `<div class="wrap">
+    <div class="row between"><div class="eyebrow">Question ${d.num} of ${d.total}</div><div class="timer" id="timer">${Math.ceil(d.remaining/1000)}</div></div>
+    <h2>What does this code print?</h2>
+    <pre class="code">${esc(d.code)}</pre>
+    <div id="ch">${choiceTiles(d.choices, {clickable:true})}</div></div>`;
+  $('ch').onclick = e => {
+    const b = e.target.closest('[data-choice]'); if (!b) return;
+    send(S.conn, {type:'answer', qi:d.qi, choice:+b.dataset.choice});
+    renderWait('Answer locked in 🔒', 'Waiting for everyone else…');
+  };
+  clearInterval(S.tick);
+  S.tick = setInterval(() => {
+    const left = deadline - Date.now();
+    if ($('timer')) $('timer').textContent = Math.max(0, Math.ceil(left/1000));
+    if (left <= 0) renderWait("Time's up ⏰", 'Look at the board for the answer.');
+  }, 200);
+}
+
+function renderReveal(d) {
+  clearInterval(S.tick);
+  const right = d.chose === d.answer;
+  const head = d.chose == null ? `<div class="big bad">No answer</div>` :
+    right ? `<div class="big good">Correct! +${d.gained}</div>${d.streak > 1 ? `<p>🔥 ${d.streak} in a row!</p>` : ''}` :
+    `<div class="big bad">Not quite</div>`;
+  app.innerHTML = `<div class="wrap"><div class="card center">${head}
+    <p style="font-size:18px">Score <b>${d.score}</b> · Place <b>${d.rank}</b> of ${d.of}</p></div>
+    ${choiceTiles(d.choices, {correct:d.answer, chose:d.chose})}
+    <div class="why">💡 ${esc(d.why)}</div></div>`;
+}
+
+function renderFinal(d) {
+  clearInterval(S.tick);
+  const medal = ['🥇','🥈','🥉'][d.rank-1] || '🎉';
+  app.innerHTML = `<div class="wrap"><div class="card center">
+    <div class="big">${medal} ${ordinal(d.rank)} place</div>
+    <p style="font-size:20px">Final score: <b>${d.score}</b> (out of ${d.of} players)</p></div>
+    <div class="card"><h2>Top 3</h2><ol class="board" style="margin-top:10px">${d.top.map((p,i) => `<li><span>${i+1}. ${esc(p.name)}</span><span>${p.score}</span></li>`).join('')}</ol></div></div>`;
+}
+function ordinal(n) { const s=['th','st','nd','rd'], v=n%100; return n + (s[(v-20)%10] || s[v] || s[0]); }
+
+/* ---------------- boot ---------------- */
+if (IS_HOST) startHost(); else renderJoin();
+</script>
+</body>
+</html>
