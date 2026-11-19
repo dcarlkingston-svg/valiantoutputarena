@@ -53,6 +53,28 @@ button.choice:active{transform:scale(.98)}
 .form{display:flex;flex-direction:column;gap:12px;max-width:380px;margin:0 auto;text-align:left}
 .form input{font-size:20px}
 .err{color:var(--bad);font-weight:700}
+/* arena + controller */
+:root{--arena:#e7ecfa;--arena-grid:rgba(43,76,196,.10)}
+@media (prefers-color-scheme:dark){:root{--arena:#121a31;--arena-grid:rgba(125,151,255,.10)}}
+.arena{display:block;width:100%;aspect-ratio:16/9;border-radius:14px;background:var(--arena);border:1px solid var(--line);touch-action:none}
+.host .arena.lobby{max-height:58vh}
+.host .arena.q{aspect-ratio:auto;height:24vh}
+.host .arena.rv{aspect-ratio:auto;height:100%;min-height:240px}
+.host .arena.fin{max-height:46vh}
+.joinbar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.joinbar .roomcode{font-size:clamp(48px,8vw,88px)}
+.split{display:grid;grid-template-columns:2fr 1fr;gap:14px;align-items:stretch}
+@media (max-width:760px){.split{grid-template-columns:1fr}}
+.pad{display:flex;flex-direction:column;gap:12px}
+.pad .arena{max-width:560px;margin:0 auto;cursor:crosshair}
+.ctrl{display:flex;justify-content:center;align-items:center;gap:20px;flex-wrap:wrap}
+.dpad{display:grid;grid-template-columns:repeat(3,58px);grid-template-rows:repeat(3,58px);gap:6px}
+.dpad button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;font-size:24px;font-weight:900;user-select:none;-webkit-user-select:none;touch-action:none}
+.dpad button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.emotes{display:grid;grid-template-columns:repeat(2,58px);gap:6px}
+.emotes button{height:58px;border:1px solid var(--line);background:var(--card);border-radius:12px;font-size:28px}
+.me{display:flex;align-items:center;justify-content:center;gap:12px}
+.me .glyph{font-size:52px;line-height:1}
 </style>
 </head>
 <body>
@@ -62,7 +84,7 @@ button.choice:active{transform:scale(.98)}
    SETUP: paste your Firebase Realtime Database URL between the quotes.
    It looks like  https://your-project-default-rtdb.firebaseio.com
    ============================================================ */
-const DATABASE_URL = "https://valiant-output-arena-default-rtdb.firebaseio.com/";
+const DATABASE_URL = "";
 
 /* ============================================================
    OUTPUT ARENA — "What does this Python code print?"
@@ -176,6 +198,62 @@ function choiceTiles(choices, o = {}) {
 function header(sub) {
   return `<div><div class="eyebrow">${esc(sub)}</div><h1>Output Arena</h1></div>`;
 }
+/* ---------------- characters + arena drawing (shared) ---------------- */
+const CHARS = ['🦊','🐼','🐸','🐙','🦁','🐯','🐨','🐵','🐧','🦉','🦄','🐲','🦖','🐢','🐬','🦈','🐝','🦋',
+               '🐞','🦀','🐳','🦕','🐹','🐰','🐻','🐷','🐔','🦩','🦜','🐺','🦝','🦦','🦥','🐊','🦔','🐌'];
+const TAGS = ['#d64545','#2f6fd6','#c98a0a','#2e9b5f','#8a4fd6','#d6457f','#1b9aa8','#d66a1f'];
+const EMOTES = ['👋','🎉','😂','🤔'];
+const glyph = c => CHARS[((c|0) % CHARS.length + CHARS.length) % CHARS.length];
+const tagColor = c => TAGS[(c|0) % TAGS.length];
+const EMOJI_FONT = '"Noto Color Emoji","Apple Color Emoji","Segoe UI Emoji",sans-serif';
+
+function fitCanvas(cv) {
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w*dpr) || cv.height !== Math.round(h*dpr)) { cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr); }
+  const g = cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); return [g, w, h];
+}
+function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
+// ents: [{x, y, char, name, badge, emote, emoteAge, me}]  (x, y run 0..1)
+function drawArena(cv, ents, o = {}) {
+  if (!cv.clientWidth) return;
+  const [g, W, H] = fitCanvas(cv), css = getComputedStyle(document.documentElement);
+  g.clearRect(0, 0, W, H);
+  const step = Math.max(24, H / 8);
+  g.strokeStyle = css.getPropertyValue('--arena-grid'); g.lineWidth = 1; g.beginPath();
+  for (let x = step; x < W; x += step) { g.moveTo(x, 0); g.lineTo(x, H); }
+  for (let y = step; y < H; y += step) { g.moveTo(0, y); g.lineTo(W, y); }
+  g.stroke();
+  if (o.watermark) {
+    g.fillStyle = css.getPropertyValue('--arena-grid'); g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = `900 ${Math.min(W/9, H/3)}px system-ui,sans-serif`; g.fillText(o.watermark, W/2, H/2);
+  }
+  const size = Math.max(22, Math.min(64, H * (o.scale || 0.11)));
+  for (const e of [...ents].sort((a,b) => a.y - b.y)) {
+    const px = e.x * W, py = e.y * H;
+    g.fillStyle = 'rgba(0,0,0,.18)'; g.beginPath(); g.ellipse(px, py + size*.45, size*.38, size*.12, 0, 0, 7); g.fill();
+    if (e.me) { g.strokeStyle = tagColor(e.char); g.lineWidth = 3; g.beginPath(); g.arc(px, py, size*.62, 0, 7); g.stroke(); }
+    g.fillStyle = '#000'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `${size}px ${EMOJI_FONT}`; g.fillText(glyph(e.char), px, py);
+    if (e.name && !o.noNames) {
+      const fs = Math.max(11, size * .32); g.font = `800 ${fs}px system-ui,sans-serif`;
+      const tw = g.measureText(e.name).width + fs, ty = py + size*.62;
+      g.fillStyle = tagColor(e.char); roundRect(g, px - tw/2, ty, tw, fs*1.5, fs*.75); g.fill();
+      g.fillStyle = '#fff'; g.fillText(e.name, px, ty + fs*.78);
+    }
+    if (e.badge) {
+      const bx = px + size*.42, by = py - size*.42, br = size*.22;
+      if (e.badge === 'ok' || e.badge === 'no') {
+        g.fillStyle = e.badge === 'ok' ? css.getPropertyValue('--good') : css.getPropertyValue('--bad');
+        g.beginPath(); g.arc(bx, by, br, 0, 7); g.fill();
+        g.fillStyle = '#fff'; g.font = `900 ${br*1.4}px system-ui,sans-serif`; g.fillText(e.badge === 'ok' ? '✓' : '✗', bx, by + 1);
+      } else { g.fillStyle = '#000'; g.font = `${br*2}px ${EMOJI_FONT}`; g.fillText(e.badge, bx, by); }
+    }
+    if (e.emote && e.emoteAge < 2500) {
+      const a = Math.min(1, (2500 - e.emoteAge) / 400), lift = Math.min(1, e.emoteAge / 200) * size * .35;
+      g.globalAlpha = a; g.fillStyle = '#000'; g.font = `${size*.7}px ${EMOJI_FONT}`; g.fillText(e.emote, px, py - size*.75 - lift); g.globalAlpha = 1;
+    }
+  }
+}
+
 if (typeof firebase === 'undefined') {
   app.innerHTML = `<div class="wrap"><div class="card"><h2>Can't load the game library</h2><p class="muted">The network blocked www.gstatic.com. Ask IT to allow www.gstatic.com and *.firebaseio.com.</p></div></div>`;
   throw new Error('Firebase not loaded');
@@ -207,7 +285,32 @@ function rankOf(p) { return 1 + [...H.players.values()].filter(o => o.score > p.
 
 /* Each student is a "connection": messages in arrive at rooms/CODE/in,
    messages out go to rooms/CODE/out/STUDENT_ID, and rooms/CODE/presence shows who is online. */
-H.fconns = new Map(); H.seq = 0;
+H.fconns = new Map(); H.seq = 0; H.pos = new Map(); H.last = 0;
+
+function assignChar(p) {
+  const used = new Set([...H.players.values()].filter(o => o !== p && o.char != null).map(o => o.char % CHARS.length));
+  const free = CHARS.map((_, i) => i).filter(i => !used.has(i) && i !== p.char);
+  p.char = free.length ? free[Math.floor(Math.random() * free.length)] : Math.floor(Math.random() * CHARS.length * 4);
+}
+function badgeFor(p) {
+  if (H.phase === 'question') return p.answers[H.qi] ? '🔒' : null;
+  if (H.phase === 'reveal') { const a = p.answers[H.qi]; return !a ? '💤' : a.choice === curQ().answer ? 'ok' : 'no'; }
+  if (H.phase === 'final') return ['🥇','🥈','🥉'][rankOf(p) - 1] || null;
+  return null;
+}
+function hostFrame(t) {
+  requestAnimationFrame(hostFrame);
+  const dt = Math.min(0.1, (t - H.last) / 1000 || 0); H.last = t;
+  const cv = $('arena'); if (!cv) return;
+  const ents = [];
+  for (const p of H.players.values()) {
+    if (!p.conn || !p.conn.open) continue;
+    const e = H.pos.get(p.cid); if (!e) continue;
+    const k = Math.min(1, dt * 12); e.dx += (e.x - e.dx) * k; e.dy += (e.y - e.dy) * k;
+    ents.push({ x: e.dx, y: e.dy, char: p.char, name: p.name, badge: badgeFor(p), emote: e.e, emoteAge: t - e.emoteAt });
+  }
+  drawArena(cv, ents, { watermark: H.phase === 'lobby' ? 'VALIANTS' : '', scale: H.phase === 'question' ? 0.2 : H.phase === 'reveal' ? 0.14 : 0.11 });
+}
 function hostConn(pid) {
   let c = H.fconns.get(pid);
   if (!c) {
@@ -246,6 +349,17 @@ async function startHost() {
       const c = H.fconns.get(s.key);
       if (c) { c.open = false; hostClose(c); H.fconns.delete(s.key); }
     });
+    const onPos = s => {
+      const v = s.val(); if (!v || typeof v.x !== 'number') return;
+      let e = H.pos.get(s.key);
+      if (!e) { e = { dx: v.x, dy: v.y, n: v.n || 0, emoteAt: -1e9 }; H.pos.set(s.key, e); }
+      if ((v.n || 0) !== e.n) { e.n = v.n || 0; e.emoteAt = performance.now(); }
+      e.x = Math.min(1, Math.max(0, v.x)); e.y = Math.min(1, Math.max(0, v.y)); e.e = EMOTES.includes(v.e) ? v.e : null;
+    };
+    room.child('pos').on('child_added', onPos);
+    room.child('pos').on('child_changed', onPos);
+    room.child('pos').on('child_removed', s => H.pos.delete(s.key));
+    requestAnimationFrame(hostFrame);
     renderHost();
   } catch (e) {
     fatal("Couldn't open the game room",
@@ -263,13 +377,18 @@ function hostData(conn, d) {
     let p = H.players.get(key);
     if (p && p.conn && p.conn.open && p.conn !== conn && p.cid !== d.cid)
       return send(conn, {type:'error', msg:'Someone already has that name. Try another one.'});
-    if (!p) { p = { name, cid:d.cid, score:0, streak:0, answers:{}, conn:null, gained:0 }; H.players.set(key, p); }
+    if (!p) { p = { name, cid:d.cid, score:0, streak:0, answers:{}, conn:null, gained:0, char:null }; H.players.set(key, p); assignChar(p); }
     if (p.conn && p.conn !== conn) { try { p.conn.close(); } catch(e){} }
     p.conn = conn; p.cid = d.cid; H.conns.set(conn.peer, key);
-    send(conn, {type:'welcome', name:p.name, score:p.score});
+    send(conn, {type:'welcome', name:p.name, score:p.score, char:p.char, lobby: H.phase === 'lobby'});
     if (H.phase === 'question') sendQuestion(p);
     else if (H.phase === 'final') sendFinal(p);
     refreshHost();
+  }
+  else if (d.type === 'reroll') {
+    const p = H.players.get(H.conns.get(conn.peer));
+    if (!p || H.phase !== 'lobby') return;
+    assignChar(p); send(conn, {type:'char', char:p.char}); refreshHost();
   }
   else if (d.type === 'answer') {
     const p = H.players.get(H.conns.get(conn.peer));
@@ -305,14 +424,14 @@ function renderHost() {
   const ps = [...H.players.entries()];
   const counts = [5,10,15,QUESTIONS.length].filter((v,i,a) => v <= QUESTIONS.length && a.indexOf(v) === i);
   app.innerHTML = `<div class="wrap host">
-    <div class="row between">${header('Intro to Python 1 · Vanguard Valiants')}</div>
-    <div class="card center">
-      <p class="muted" style="margin:0">Open <b>Output Arena</b> in Canvas and enter this code:</p>
-      <div class="roomcode">${H.code}</div>
+    <div class="card joinbar">
+      ${header('Intro to Python 1 · Vanguard Valiants')}
+      <div class="center"><div class="muted small">Open <b>Output Arena</b> in Canvas · code</div><div class="roomcode">${H.code}</div></div>
     </div>
+    <canvas id="arena" class="arena lobby"></canvas>
     <div class="card">
       <div class="row between"><h2>Players (${ps.length})</h2><span class="muted small">Click a name to remove it</span></div>
-      <div class="chips" id="chips">${ps.length ? ps.map(([k,p]) => `<button class="chip ${p.conn && p.conn.open ? '' : 'off'}" data-key="${esc(k)}">${esc(p.name)}</button>`).join('') : '<span class="muted">Waiting for players…</span>'}</div>
+      <div class="chips" id="chips">${ps.length ? ps.map(([k,p]) => `<button class="chip ${p.conn && p.conn.open ? '' : 'off'}" data-key="${esc(k)}">${glyph(p.char)} ${esc(p.name)}</button>`).join('') : '<span class="muted">Waiting for players…</span>'}</div>
     </div>
     <div class="card row wrapgap between">
       <div class="row wrapgap">
@@ -331,6 +450,7 @@ function renderHost() {
     const p = H.players.get(key); if (!p) return;
     if (!confirm(`Remove ${p.name} from the game?`)) return;
     if (p.conn) { send(p.conn, {type:'kicked'}); const c = p.conn; setTimeout(() => { try { c.close(); } catch(e){} }, 300); }
+    H.room.child('pos/' + p.cid).remove().catch(() => {}); H.pos.delete(p.cid);
     H.players.delete(key); renderHost();
   };
 }
@@ -358,6 +478,7 @@ function askQuestion() {
     <h2>What does this code print?</h2>
     <pre class="code">${esc(q.code)}</pre>
     ${choiceTiles(q.choices)}
+    <canvas id="arena" class="arena q"></canvas>
     <div class="row between"><span class="muted" id="answered">${answeredText()}</span><button class="btn" id="revealNow">Reveal now</button></div></div>`;
   $('revealNow').onclick = reveal;
   clearInterval(H.timer);
@@ -396,9 +517,12 @@ function reveal() {
     <pre class="code">${esc(q.code)}</pre>
     ${choiceTiles(q.choices, {correct:q.answer, counts})}
     <div class="why">💡 ${esc(q.why)}</div>
-    <div class="card"><h2>Leaderboard</h2><ol class="board" style="margin-top:10px">
-      ${top.map((p,i) => `<li><span>${i+1}. ${esc(p.name)}${p.gained ? `<span class="gain">+${p.gained}</span>` : ''}</span><span>${p.score}</span></li>`).join('') || '<li>No players</li>'}
-    </ol></div>
+    <div class="split">
+      <canvas id="arena" class="arena rv"></canvas>
+      <div class="card"><h2>Leaderboard</h2><ol class="board" style="margin-top:10px">
+        ${top.map((p,i) => `<li><span>${i+1}. ${glyph(p.char)} ${esc(p.name)}${p.gained ? `<span class="gain">+${p.gained}</span>` : ''}</span><span>${p.score}</span></li>`).join('') || '<li>No players</li>'}
+      </ol></div>
+    </div>
     <div class="row" style="justify-content:flex-end"><button class="btn primary" id="next">${last ? 'Final results 🏆' : 'Next question ▶'}</button></div></div>`;
   $('next').onclick = () => { if (last) finish(); else { H.qi++; askQuestion(); } };
 }
@@ -412,11 +536,12 @@ function finish() {
   H.phase = 'final';
   for (const p of H.players.values()) sendFinal(p);
   const r = ranked(), [a,b,c] = r;
-  const pod = (p,place,h) => p ? `<div class="pod" style="height:${h}px"><div class="pl">${place}</div><div class="nm">${esc(p.name)}</div><div>${p.score}</div></div>` : '';
+  const pod = (p,place,h) => p ? `<div class="pod" style="height:${h}px"><div class="pl">${place}</div><div class="pl">${glyph(p.char)}</div><div class="nm">${esc(p.name)}</div><div>${p.score}</div></div>` : '';
   app.innerHTML = `<div class="wrap host">
     <div class="row between">${header('Final results')}</div>
-    <div class="podium">${pod(b,'🥈',170)}${pod(a,'🥇',220)}${pod(c,'🥉',140)}</div>
-    <div class="card"><ol class="board">${r.map((p,i) => `<li><span>${i+1}. ${esc(p.name)}</span><span>${p.score}</span></li>`).join('')}</ol></div>
+    <div class="podium">${pod(b,'🥈',200)}${pod(a,'🥇',250)}${pod(c,'🥉',170)}</div>
+    <canvas id="arena" class="arena fin"></canvas>
+    <div class="card"><ol class="board">${r.map((p,i) => `<li><span>${i+1}. ${glyph(p.char)} ${esc(p.name)}</span><span>${p.score}</span></li>`).join('')}</ol></div>
     <div class="row" style="justify-content:flex-end"><button class="btn primary" id="again">Play again ↺</button></div></div>`;
   $('again').onclick = () => {
     H.phase = 'lobby'; H.qi = -1;
@@ -426,16 +551,84 @@ function finish() {
 }
 
 /* ================= STUDENT ================= */
-const S = { room:null, conn:null, tick:null, offs:[], cid: load('oa-cid') || ('s' + Math.random().toString(36).slice(2, 12)) };
+const S = { room:null, conn:null, tick:null, offs:[], cid: load('oa-cid') || ('s' + Math.random().toString(36).slice(2, 12)),
+            char:null, name:'', lobby:false, x:0.2 + Math.random()*0.6, y:0.2 + Math.random()*0.55,
+            keys:new Set(), held:new Set(), target:null, emote:null, emoteN:0, emoteAt:-1e9, dirty:true, lastSend:0, last:0 };
 store('oa-cid', S.cid);
+
+/* ---- character controller (student) ---- */
+const KEYMAP = { ArrowUp:'u', KeyW:'u', ArrowDown:'d', KeyS:'d', ArrowLeft:'l', KeyA:'l', ArrowRight:'r', KeyD:'r' };
+function typing(e) { return /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || ''); }
+window.addEventListener('keydown', e => {
+  if (IS_HOST || S.char == null || typing(e) || !KEYMAP[e.code]) return;
+  e.preventDefault(); S.keys.add(KEYMAP[e.code]);
+});
+window.addEventListener('keyup', e => { if (KEYMAP[e.code]) S.keys.delete(KEYMAP[e.code]); });
+window.addEventListener('blur', () => { S.keys.clear(); S.held.clear(); });
+window.addEventListener('pointerup', () => { S.held.clear(); document.querySelectorAll('.dpad .on').forEach(b => b.classList.remove('on')); });
+
+function padHTML() {
+  if (S.char == null || !S.conn) return '';
+  const dir = (d, label, col, row) => `<button data-dir="${d}" style="grid-column:${col};grid-row:${row}" aria-label="Move ${d}">${label}</button>`;
+  return `<div class="card pad">
+    <div class="me"><span class="glyph" id="myGlyph">${glyph(S.char)}</span><div style="text-align:left"><b>${esc(S.name)}</b><div class="muted small">Move with arrow keys or WASD, or tap the map.<br>You're on the projector!</div></div>
+      ${S.lobby ? '<button class="btn" id="reroll">New character 🔀</button>' : ''}</div>
+    <canvas id="mini" class="arena"></canvas>
+    <div class="ctrl">
+      <div class="dpad">${dir('u','▲',2,1)}${dir('l','◀',1,2)}${dir('r','▶',3,2)}${dir('d','▼',2,3)}</div>
+      <div class="emotes">${EMOTES.map(e => `<button data-emote="${e}" aria-label="Emote ${e}">${e}</button>`).join('')}</div>
+    </div></div>`;
+}
+function bindPad() {
+  document.querySelectorAll('.dpad [data-dir]').forEach(b => b.addEventListener('pointerdown', e => {
+    e.preventDefault(); S.held.add(b.dataset.dir); b.classList.add('on');
+  }));
+  document.querySelectorAll('[data-emote]').forEach(b => b.onclick = () => {
+    S.emote = b.dataset.emote; S.emoteN++; S.emoteAt = performance.now(); S.dirty = true;
+  });
+  const mini = $('mini');
+  if (mini) mini.addEventListener('pointerdown', e => {
+    const r = mini.getBoundingClientRect();
+    S.target = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
+  });
+  if ($('reroll')) $('reroll').onclick = () => send(S.conn, {type:'reroll'});
+}
+function studentFrame(t) {
+  requestAnimationFrame(studentFrame);
+  const dt = Math.min(0.1, (t - S.last) / 1000 || 0); S.last = t;
+  if (S.char == null || !S.conn) return;
+  const on = d => S.keys.has(d) || S.held.has(d);
+  let vx = (on('r') ? 1 : 0) - (on('l') ? 1 : 0), vy = (on('d') ? 1 : 0) - (on('u') ? 1 : 0);
+  if (vx || vy) S.target = null;
+  else if (S.target) {
+    const ax = S.target.x - S.x, ay = (S.target.y - S.y) * 9/16, dist = Math.hypot(ax, ay);
+    if (dist < 0.01) S.target = null; else { vx = ax / dist; vy = ay / dist; }
+  }
+  if (vx || vy) {
+    const len = Math.hypot(vx, vy), sp = 0.42 * dt;
+    S.x = Math.min(0.96, Math.max(0.04, S.x + vx / len * sp));
+    S.y = Math.min(0.86, Math.max(0.08, S.y + vy / len * sp * 16/9));
+    S.dirty = true;
+  }
+  if (S.dirty && S.room && t - S.lastSend > 100) {
+    S.dirty = false; S.lastSend = t;
+    S.room.child('pos/' + S.cid).set({ x: +S.x.toFixed(3), y: +S.y.toFixed(3), e: S.emote, n: S.emoteN }).catch(() => {});
+  }
+  const mini = $('mini');
+  if (mini) drawArena(mini, [{ x:S.x, y:S.y, char:S.char, name:S.name, me:true, emote:S.emote, emoteAge:t - S.emoteAt }], { scale: 0.16 });
+}
+if (!IS_HOST) requestAnimationFrame(studentFrame);
 
 function cleanup() {
   clearInterval(S.tick);
   S.offs.forEach(f => { try { f(); } catch(e){} }); S.offs = [];
   if (S.room) {
-    const pres = S.room.child('presence/' + S.cid);
-    try { pres.onDisconnect().cancel(); pres.remove(); } catch(e){}
+    for (const k of ['presence/', 'pos/']) {
+      const r = S.room.child(k + S.cid);
+      try { r.onDisconnect().cancel(); r.remove(); } catch(e){}
+    }
   }
+  S.char = null; S.lobby = false;
   if (S.conn) S.conn.open = false;
   S.conn = null; S.room = null;
 }
@@ -454,9 +647,10 @@ function renderJoin(msg) {
   $('f').onsubmit = e => { e.preventDefault(); join($('code').value, $('name').value); };
 }
 
-function renderWait(title, sub) {
+function renderWait(title, sub, pad) {
   clearInterval(S.tick);
-  app.innerHTML = `<div class="wrap"><div class="card center"><div class="big">${esc(title)}</div><p class="muted" style="font-size:18px">${esc(sub)}</p></div></div>`;
+  app.innerHTML = `<div class="wrap"><div class="card center"><div class="big">${esc(title)}</div><p class="muted" style="font-size:18px">${esc(sub)}</p></div>${pad ? padHTML() : ''}</div>`;
+  if (pad) bindPad();
 }
 
 async function join(code, name) {
@@ -483,6 +677,7 @@ async function join(code, name) {
     if (!s.val() || !conn.open) return;
     const pres = room.child('presence/' + pid);
     pres.onDisconnect().remove(); pres.set(true);
+    room.child('pos/' + pid).onDisconnect().remove(); S.dirty = true;
     conn.send({ type: 'join', name, cid: pid });
   });
   listen(room.child('host'), 'value', s => {
@@ -498,12 +693,17 @@ function studentData(d) {
   if (d.choices) d.choices = asList(d.choices);
   if (d.top) d.top = asList(d.top);
   switch (d.type) {
-    case 'welcome': renderWait(`You're in, ${d.name}!`, 'Watch the board. The game starts soon.'); break;
+    case 'welcome':
+      S.char = d.char; S.name = d.name;
+      S.lobby = !!d.lobby;
+      renderWait(`You're in, ${d.name}!`, S.lobby ? 'Walk around while everyone joins.' : 'The game is running. You\'ll get the next question.', true);
+      break;
+    case 'char': S.char = d.char; if ($('myGlyph')) $('myGlyph').textContent = glyph(d.char); break;
     case 'error': cleanup(); renderJoin(d.msg); break;
     case 'kicked': cleanup(); renderJoin('Your teacher removed that name. Join again with your real name.'); break;
-    case 'lobby': renderWait('New game!', 'Get ready. Your teacher is starting another round.'); break;
-    case 'locked': renderWait('Answer locked in 🔒', 'Waiting for everyone else…'); break;
-    case 'question': d.already ? renderWait('Answer locked in 🔒', 'Waiting for everyone else…') : renderQuestion(d); break;
+    case 'lobby': S.lobby = true; renderWait('New game!', 'Get ready. Your teacher is starting another round.', true); break;
+    case 'locked': S.lobby = false; renderWait('Answer locked in 🔒', 'Waiting for everyone else. Walk around while you wait!', true); break;
+    case 'question': S.lobby = false; d.already ? renderWait('Answer locked in 🔒', 'Waiting for everyone else…', true) : renderQuestion(d); break;
     case 'reveal': renderReveal(d); break;
     case 'final': renderFinal(d); break;
   }
@@ -519,13 +719,13 @@ function renderQuestion(d) {
   $('ch').onclick = e => {
     const b = e.target.closest('[data-choice]'); if (!b) return;
     send(S.conn, {type:'answer', qi:d.qi, choice:+b.dataset.choice});
-    renderWait('Answer locked in 🔒', 'Waiting for everyone else…');
+    renderWait('Answer locked in 🔒', 'Waiting for everyone else. Walk around while you wait!', true);
   };
   clearInterval(S.tick);
   S.tick = setInterval(() => {
     const left = deadline - Date.now();
     if ($('timer')) $('timer').textContent = Math.max(0, Math.ceil(left/1000));
-    if (left <= 0) renderWait("Time's up ⏰", 'Look at the board for the answer.');
+    if (left <= 0) renderWait("Time's up ⏰", 'Look at the board for the answer.', true);
   }, 200);
 }
 
@@ -538,7 +738,8 @@ function renderReveal(d) {
   app.innerHTML = `<div class="wrap"><div class="card center">${head}
     <p style="font-size:18px">Score <b>${d.score}</b> · Place <b>${d.rank}</b> of ${d.of}</p></div>
     ${choiceTiles(d.choices, {correct:d.answer, chose:d.chose})}
-    <div class="why">💡 ${esc(d.why)}</div></div>`;
+    <div class="why">💡 ${esc(d.why)}</div>${padHTML()}</div>`;
+  bindPad();
 }
 
 function renderFinal(d) {
@@ -547,7 +748,8 @@ function renderFinal(d) {
   app.innerHTML = `<div class="wrap"><div class="card center">
     <div class="big">${medal} ${ordinal(d.rank)} place</div>
     <p style="font-size:20px">Final score: <b>${d.score}</b> (out of ${d.of} players)</p></div>
-    <div class="card"><h2>Top 3</h2><ol class="board" style="margin-top:10px">${d.top.map((p,i) => `<li><span>${i+1}. ${esc(p.name)}</span><span>${p.score}</span></li>`).join('')}</ol></div></div>`;
+    <div class="card"><h2>Top 3</h2><ol class="board" style="margin-top:10px">${d.top.map((p,i) => `<li><span>${i+1}. ${esc(p.name)}</span><span>${p.score}</span></li>`).join('')}</ol></div>${padHTML()}</div>`;
+  bindPad();
 }
 function ordinal(n) { const s=['th','st','nd','rd'], v=n%100; return n + (s[(v-20)%10] || s[v] || s[0]); }
 
